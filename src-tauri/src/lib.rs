@@ -149,8 +149,11 @@ async fn start_encode(app: AppHandle, req: EncodeRequest) -> Result<Vec<String>,
         .ok_or_else(|| "未找到 ffmpeg，请在设置中指定".to_string())?;
 
     let job_id = format!("job-{}", std::process::id());
+    // 闭包拿走一份句柄，外层保留 app 用于在任务结束后发送 done / error 事件。
+    // 之前闭包直接 move 了 app，外层再 app.emit 就触发了 E0382。
+    let worker_app = app.clone();
     let handle = tauri::async_runtime::spawn_blocking(move || {
-        let emitter = app.clone();
+        let emitter = worker_app.clone();
         let jid = job_id.clone();
         let mut emit = |pct: f32, msg: String| {
             let _ = emitter.emit(

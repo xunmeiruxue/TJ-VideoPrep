@@ -210,7 +210,7 @@ pub fn probe(video: &str, ffprobe: &std::path::Path) -> Result<ProbeResult, Stri
                         String::new()
                     }
                 };
-                let mut track = AudioTrack {
+                let track = AudioTrack {
                     stream_index: i(st, "index"),
                     ordinal: audio_ordinal,
                     codec: s(st, "codec_name"),
