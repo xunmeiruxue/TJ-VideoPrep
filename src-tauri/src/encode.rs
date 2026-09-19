@@ -256,6 +256,43 @@ fn base_name(req: &EncodeRequest) -> String {
         .unwrap_or_else(|| "output".to_string())
 }
 
+/// 所有步骤共用的全局参数（必须出现在 `-i` 之前）
+fn global_args() -> Vec<String> {
+    vec![
+        "-hide_banner".into(),
+        "-nostdin".into(),
+        "-loglevel".into(),
+        "error".into(),
+        "-progress".into(),
+        "pipe:1".into(),
+        "-nostats".into(),
+    ]
+}
+
+/// 把输入文件放到参数最前面：ffmpeg 要求 `-i` 出现在所有输出选项之前。
+///
+/// 这里与 `describe_plan` 必须使用同一份参数。曾经 `-i` 只写在预览的模板里、
+/// 没进真正的参数表，结果是"预览正确、执行缺少输入"，ffmpeg 立即以 EINVAL(-22) 退出。
+fn with_input(req: &EncodeRequest, args: Vec<String>) -> Vec<String> {
+    let mut out = Vec::with_capacity(args.len() + 2);
+    out.push("-i".to_string());
+    out.push(req.video.clone());
+    out.extend(args);
+    out
+}
+
+fn quote_args(args: &[String]) -> Vec<String> {
+    args.iter()
+        .map(|a| {
+            if a.contains(' ') {
+                format!("\"{a}\"")
+            } else {
+                a.clone()
+            }
+        })
+        .collect()
+}
+
 /// 一次任务的步骤列表（含每步的时长，供进度换算）
 struct Step {
     label: String,
@@ -281,7 +318,7 @@ fn build_steps(req: &EncodeRequest) -> Vec<Step> {
                 req.audio_codec.to_uppercase(),
                 req.audio_mode
             ),
-            args: audio_args(req, &out.to_string_lossy()),
+            args: with_input(req, audio_args(req, &out.to_string_lossy())),
             // 音频转码很快，进度按比例给一个近似值时长为原时长
             duration: req.duration,
         });
@@ -291,7 +328,7 @@ fn build_steps(req: &EncodeRequest) -> Vec<Step> {
         let out = dir.join(format!("{base}.preview.{}p.mp4", req.preview_height));
         steps.push(Step {
             label: format!("预览 {}p / CRF {}", req.preview_height, req.preview_crf),
-            args: video_preview_args(req, &out.to_string_lossy()),
+            args: with_input(req, video_preview_args(req, &out.to_string_lossy())),
             duration: req.duration,
         });
     }
@@ -300,7 +337,7 @@ fn build_steps(req: &EncodeRequest) -> Vec<Step> {
         let out = dir.join(format!("{base}.high.mp4"));
         steps.push(Step {
             label: format!("高质量 CRF {}", req.high_crf),
-            args: video_high_args(req, &out.to_string_lossy()),
+            args: with_input(req, video_high_args(req, &out.to_string_lossy())),
             duration: req.duration,
         });
     }
@@ -309,7 +346,7 @@ fn build_steps(req: &EncodeRequest) -> Vec<Step> {
         let out = dir.join(format!("{base}.remux.mkv"));
         steps.push(Step {
             label: "原样封装".into(),
-            args: remux_args(&out.to_string_lossy()),
+            args: with_input(req, remux_args(&out.to_string_lossy())),
             duration: req.duration,
         });
     }
@@ -324,22 +361,14 @@ pub fn describe_plan(req: &EncodeRequest, ffmpeg: &Path) -> Vec<String> {
     let mut lines = vec![head];
 
     for s in build_steps(req) {
-        let quoted: Vec<String> = s
-            .args
-            .iter()
-            .map(|a| {
-                if a.contains(' ') {
-                    format!("\"{a}\"")
-                } else {
-                    a.clone()
-                }
-            })
-            .collect();
+        // 与 run_step 用同一份参数，保证"预览所见 = 执行所用"
+        let mut full = global_args();
+        full.extend(s.args.clone());
+        let quoted = quote_args(&full);
         lines.push(format!(
-            "【{}】\n{} -hide_banner -nostdin -progress pipe:1 -nostats -i \"{}\" {}",
+            "【{}】\n{} {}",
             s.label,
             ffmpeg.to_string_lossy(),
-            req.video,
             quoted.join(" ")
         ));
     }
@@ -359,20 +388,27 @@ fn run_step(
     on_progress: &mut dyn FnMut(f32, String),
 ) -> Result<(), String> {
     let mut cmd = tools::hidden_command(&ffmpeg.to_string_lossy());
-    cmd.arg("-hide_banner")
-        .arg("-nostdin")
-        .arg("-loglevel")
-        .arg("error")
-        .arg("-progress")
-        .arg("pipe:1")
-        .arg("-nostats")
-        .args(&step.args);
+    cmd.args(global_args()).args(&step.args);
 
+    // 三个标准流都必须显式处理：
+    // - stdin 给 null：本程序是 GUI 进程（没有控制台），子进程继承到的 stdin 句柄可能无效
+    // - stderr 必须持续读走：管道写满会让 ffmpeg 阻塞在写日志上，进而卡死或异常退出
+    cmd.stdin(Stdio::null());
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
 
     let mut child = cmd.spawn().map_err(|e| format!("启动 ffmpeg 失败: {e}"))?;
     let stdout = child.stdout.take().ok_or("无法读取 ffmpeg 输出")?;
+
+    let stderr = child.stderr.take();
+    let err_thread = std::thread::spawn(move || {
+        let mut buf = String::new();
+        if let Some(mut e) = stderr {
+            let _ = std::io::Read::read_to_string(&mut e, &mut buf);
+        }
+        buf
+    });
+
     let reader = BufReader::new(stdout);
 
     for line in reader.lines() {
@@ -403,10 +439,25 @@ fn run_step(
     }
 
     let status = child.wait().map_err(|e| e.to_string())?;
+    let err_text = err_thread.join().unwrap_or_default();
+
     if !status.success() {
-        return Err(format!("ffmpeg 退出码 {:?}", status.code()));
+        let detail = tail_lines(&err_text, 12);
+        let detail = if detail.trim().is_empty() {
+            "(ffmpeg 没有输出错误信息)".to_string()
+        } else {
+            detail
+        };
+        return Err(format!("ffmpeg 退出码 {:?}\n{detail}", status.code()));
     }
     Ok(())
+}
+
+/// 取文本的最后 n 行（ffmpeg 的报错通常在末尾），去掉空行
+fn tail_lines(text: &str, n: usize) -> String {
+    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+    let start = lines.len().saturating_sub(n);
+    lines[start..].join("\n")
 }
 
 /// 批量执行：依次处理每个文件的全部步骤

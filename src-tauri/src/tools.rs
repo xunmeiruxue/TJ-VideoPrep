@@ -133,6 +133,40 @@ fn first_existing(candidates: &[PathBuf]) -> Option<PathBuf> {
     candidates.iter().find(|p| exists_executable(p)).cloned()
 }
 
+/// Scoop 的 `shims` 目录里放的是转发器，不是真程序。转发器在 GUI（无控制台）
+/// 进程里的行为不如直接调用真实程序可靠，所以识别出来后尽量换成真实路径。
+fn resolve_scoop_shim(shim: &Path) -> Option<PathBuf> {
+    let shims_dir = shim.parent()?;
+    if !shims_dir
+        .file_name()
+        .map(|n| n.to_string_lossy().eq_ignore_ascii_case("shims"))
+        .unwrap_or(false)
+    {
+        return None;
+    }
+
+    let scoop_root = shims_dir.parent()?;
+    let stem = shim.file_stem()?.to_string_lossy().to_string();
+
+    // 布局一：<Scoop>\apps\<stem>\current\bin\<stem>.exe
+    // 布局二：ffprobe 与 ffmpeg 打包在同一个 app 内
+    let candidates = [
+        scoop_root
+            .join("apps")
+            .join(&stem)
+            .join("current")
+            .join("bin")
+            .join(exe_name(&stem)),
+        scoop_root
+            .join("apps")
+            .join("ffmpeg")
+            .join("current")
+            .join("bin")
+            .join(exe_name(&stem)),
+    ];
+    first_existing(&candidates)
+}
+
 /// ffmpeg / ffprobe 解析
 pub fn resolve_ffmpeg(stem: &str, explicit: &str) -> Option<PathBuf> {
     if !explicit.trim().is_empty() {
@@ -150,7 +184,7 @@ pub fn resolve_ffmpeg(stem: &str, explicit: &str) -> Option<PathBuf> {
     }
 
     if let Some(p) = which(stem) {
-        return Some(p);
+        return Some(resolve_scoop_shim(&p).unwrap_or(p));
     }
 
     // 常见安装位置（不遍历全盘，只查已知目录）
