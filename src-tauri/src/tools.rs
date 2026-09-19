@@ -234,3 +234,81 @@ pub fn mpv_candidates() -> Vec<String> {
     v.dedup();
     v
 }
+
+/// 输出的子目录名。便携版直接落在程序目录下的这个文件夹里。
+pub const OUTPUT_FOLDER: &str = "TJ-Output";
+
+/// 程序目录下的默认输出根目录
+pub fn default_output_root() -> PathBuf {
+    app_dir().join(OUTPUT_FOLDER)
+}
+
+const MEDIA_EXTS: &[&str] = &[
+    "mkv", "mp4", "m4v", "avi", "mov", "ts", "m2ts", "mts", "webm", "wmv", "flv", "vob", "mpg",
+    "mpeg", "rmvb", "3gp", "ogv", "f4v", "asf", "divx", "rm",
+];
+
+/// 是否是本工具认的媒体文件（按扩展名）
+pub fn is_media_file(p: &Path) -> bool {
+    match p.extension() {
+        Some(e) => {
+            let e = e.to_string_lossy().to_lowercase();
+            MEDIA_EXTS.contains(&e.as_str())
+        }
+        None => false,
+    }
+}
+
+/// 递归扫描目录，收集媒体文件（最多 6 层，避免误入超深目录）
+pub fn scan_dir(root: &Path, out: &mut Vec<PathBuf>, depth: usize) {
+    if depth > 6 {
+        return;
+    }
+    let entries = match std::fs::read_dir(root) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    let mut subdirs: Vec<PathBuf> = Vec::new();
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.is_dir() {
+            subdirs.push(p);
+        } else if is_media_file(&p) {
+            out.push(p);
+        }
+    }
+    for d in subdirs {
+        scan_dir(&d, out, depth + 1);
+    }
+}
+
+/// 把一批"可能是文件也可能是目录"的路径展开成媒体文件列表（拖放与文件夹添加共用）
+pub fn expand_paths(paths: &[String]) -> Vec<String> {
+    let mut files: Vec<PathBuf> = Vec::new();
+
+    for raw in paths {
+        let p = PathBuf::from(raw);
+        if p.is_dir() {
+            scan_dir(&p, &mut files, 0);
+        } else if p.is_file() {
+            if is_media_file(&p) {
+                files.push(p);
+            }
+        }
+    }
+
+    // 去重（忽略大小写）并排序，保证批量结果稳定
+    let mut seen: Vec<String> = Vec::new();
+    let mut result: Vec<String> = Vec::new();
+    files.sort();
+    for f in files {
+        let key = f.to_string_lossy().to_lowercase();
+        if !seen.contains(&key) {
+            seen.push(key);
+            result.push(f.to_string_lossy().to_string());
+        }
+    }
+    result
+}
+

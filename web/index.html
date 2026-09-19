@@ -14,8 +14,8 @@
       <span class="brand-sub" id="app-version"></span>
     </div>
     <div class="topbar-actions">
-      <button id="btn-settings" class="btn ghost">运行环境</button>
-      <button id="btn-open-dir" class="btn ghost">打开程序目录</button>
+      <button id="btn-env" class="btn ghost">运行环境</button>
+      <button id="btn-open-dir" class="btn ghost">程序目录</button>
     </div>
   </header>
 
@@ -24,6 +24,7 @@
     <div class="env-item"><label>ffprobe</label><span id="env-ffprobe" class="mono">检测中…</span></div>
     <div class="env-item"><label>mpv</label><span id="env-mpv" class="mono">检测中…</span></div>
     <div class="env-actions">
+      <button id="btn-recheck" class="btn tiny accent">重新检测</button>
       <button id="btn-pick-ffmpeg" class="btn tiny">指定 ffmpeg</button>
       <button id="btn-pick-mpv" class="btn tiny">指定 mpv</button>
       <button id="btn-dl-mpv" class="btn tiny accent">下载 mpv</button>
@@ -31,55 +32,56 @@
     </div>
   </section>
 
+  <div class="toolbar">
+    <button id="btn-add-files" class="btn accent">添加文件</button>
+    <button id="btn-add-folder" class="btn">添加文件夹</button>
+    <button id="btn-clear" class="btn ghost">清空列表</button>
+    <span class="drop-hint">也可以把视频或整个文件夹直接拖进窗口</span>
+  </div>
+
+  <div id="drop-overlay" class="drop-overlay hidden"><div class="drop-box">松开即可添加</div></div>
+
   <main class="layout">
-    <section class="col col-left">
+    <section class="card col-queue">
+      <div class="card-head">
+        <h2>文件队列</h2>
+        <span id="queue-count" class="hint">0 个</span>
+      </div>
+      <div id="queue" class="queue"></div>
+      <div class="queue-foot">
+        <label class="check"><input type="checkbox" id="opt-auto-first" checked /><span>多条音轨且未选择时，默认用第一条（会先提示）</span></label>
+      </div>
+    </section>
+
+    <section class="col-main">
       <div class="card">
         <div class="card-head">
-          <h2>源文件</h2>
-          <button id="btn-pick-video" class="btn accent">选择视频</button>
-        </div>
-        <div class="file-line">
-          <span id="video-path" class="mono muted">尚未选择文件</span>
-        </div>
-        <div id="media-meta" class="media-meta"></div>
-      </div>
-
-      <div class="card grow">
-        <div class="card-head">
-          <h2>音轨</h2>
-          <span class="hint">点击选中；"试听"用 mpv 直接播放源文件，不产生中间文件</span>
+          <h2 id="current-name">未选择文件</h2>
+          <span id="current-meta" class="hint"></span>
         </div>
         <div class="table-wrap">
           <table class="tracks">
             <thead>
               <tr>
-                <th style="width:44px">#</th>
+                <th style="width:40px" title="选择用于导出的音轨">选</th>
+                <th style="width:40px">#</th>
                 <th>编码</th>
-                <th style="width:88px">声道</th>
-                <th style="width:70px">语言</th>
+                <th style="width:118px">声道</th>
+                <th style="width:64px">语言</th>
                 <th>标题</th>
-                <th style="width:150px">建议</th>
-                <th style="width:70px"></th>
+                <th style="width:132px">建议</th>
+                <th style="width:64px"></th>
               </tr>
             </thead>
             <tbody id="track-rows">
-              <tr class="empty"><td colspan="7">选择视频后在此列出全部音轨</td></tr>
+              <tr class="empty"><td colspan="8">添加文件后在此列出音轨</td></tr>
             </tbody>
           </table>
         </div>
-      </div>
-
-      <div class="card">
-        <div class="card-head"><h2>时间轴对齐</h2></div>
         <div id="align-info" class="align-info muted">等待分析…</div>
-        <label class="check">
-          <input type="checkbox" id="opt-align" checked />
-          <span>导出音频时按上面的偏移自动补偿（保证音频 0 秒 = 视频 0 秒）</span>
-        </label>
+        <label class="check"><input type="checkbox" id="opt-align" checked /><span>导出音频时按上面的偏移自动补偿（保证音频 0 秒 = 视频 0 秒）</span></label>
       </div>
-    </section>
 
-    <section class="col col-right">
       <div class="card">
         <div class="card-head"><h2>输出内容</h2></div>
 
@@ -145,13 +147,13 @@
 
       <div class="card">
         <div class="card-head"><h2>输出位置</h2></div>
-        <div class="dir-line">
-          <span id="out-dir" class="mono muted">未设置</span>
-          <button id="btn-pick-out" class="btn tiny">选择</button>
+        <label class="check"><input type="radio" name="outmode" value="app" checked /><span>程序目录 · <span id="out-app-path" class="mono muted">…</span></span></label>
+        <label class="check"><input type="radio" name="outmode" value="source" /><span>各源文件所在目录（各自建 <code>TJ-Output</code> 子文件夹）</span></label>
+        <label class="check"><input type="radio" name="outmode" value="custom" /><span>指定目录</span></label>
+        <div id="custom-dir-row" class="dir-line hidden">
+          <span id="custom-dir" class="mono muted">未设置</span>
+          <button id="btn-pick-custom" class="btn tiny">选择</button>
         </div>
-        <label class="field">文件名前缀
-          <input type="text" id="opt-basename" placeholder="留空则用源文件名" />
-        </label>
       </div>
 
       <div class="card">
@@ -176,6 +178,17 @@
       </div>
     </section>
   </main>
+
+  <div id="modal" class="modal hidden">
+    <div class="modal-box">
+      <h3 id="modal-title">提示</h3>
+      <div id="modal-body" class="modal-body"></div>
+      <div class="modal-actions">
+        <button id="modal-cancel" class="btn">取消</button>
+        <button id="modal-ok" class="btn accent">继续导出</button>
+      </div>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>
