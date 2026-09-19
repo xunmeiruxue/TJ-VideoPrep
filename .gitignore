@@ -1,0 +1,25 @@
+# Rust / Tauri
+/src-tauri/target/
+/src-tauri/gen/schemas/
+/src-tauri/gen/android/
+/src-tauri/gen/apple/
+*.pdb
+*.exp
+*.lib
+
+# 构建产物
+/dist/
+/build/
+*.zip
+
+# 运行时数据（portable 模式写到程序目录，不入库）
+/runtime/
+*.log
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+*.user
+Thumbs.db
+desktop.ini
+.DS_Store

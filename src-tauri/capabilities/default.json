@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "TJ-VideoPrep 主窗口能力（仅核心权限；文件对话框与进程调用在 Rust 侧实现）",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

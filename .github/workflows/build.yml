@@ -1,0 +1,65 @@
+name: build
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      # 前端为纯静态文件（web/），无需 Node 构建步骤
+      - name: Build and release
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__
+          releaseName: 'TJ-VideoPrep v__VERSION__'
+          releaseBody: |
+            Windows 构建产物。
+
+            - `TJ-VideoPrep_*_x64-setup.exe`：NSIS 安装包（安装时可选目录）
+            - `TJ-VideoPrep_*_portable.zip`：免安装版，解压即用
+          releaseDraft: true
+          prerelease: false
+          args: ''
+
+      - name: Package portable build
+        shell: pwsh
+        run: |
+          $candidates = @(
+            "src-tauri/target/release/tj-videoprep.exe",
+            "src-tauri/target/release/TJ-VideoPrep.exe"
+          )
+          $exe = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $exe) { throw "找不到构建产物（已查找: $($candidates -join ', ')）" }
+          $version = (Get-Content src-tauri/tauri.conf.json | ConvertFrom-Json).version
+          New-Item -ItemType Directory -Force -Path portable | Out-Null
+          Copy-Item $exe "portable/TJ-VideoPrep.exe"
+          Compress-Archive -Path "portable/*" -DestinationPath "TJ-VideoPrep_${version}_x64_portable.zip" -Force
+          Write-Host "portable zip ready: TJ-VideoPrep_${version}_x64_portable.zip"
+
+      - name: Upload portable zip to release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json | ConvertFrom-Json).version
+          gh release upload "v$version" "TJ-VideoPrep_${version}_x64_portable.zip" --clobber

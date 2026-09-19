@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TJ-VideoPrep</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark"></span>
+      <span class="brand-name">TJ-VideoPrep</span>
+      <span class="brand-sub" id="app-version"></span>
+    </div>
+    <div class="topbar-actions">
+      <button id="btn-settings" class="btn ghost">运行环境</button>
+      <button id="btn-open-dir" class="btn ghost">打开程序目录</button>
+    </div>
+  </header>
+
+  <section id="envbar" class="envbar hidden">
+    <div class="env-item"><label>ffmpeg</label><span id="env-ffmpeg" class="mono">检测中…</span></div>
+    <div class="env-item"><label>ffprobe</label><span id="env-ffprobe" class="mono">检测中…</span></div>
+    <div class="env-item"><label>mpv</label><span id="env-mpv" class="mono">检测中…</span></div>
+    <div class="env-actions">
+      <button id="btn-pick-ffmpeg" class="btn tiny">指定 ffmpeg</button>
+      <button id="btn-pick-mpv" class="btn tiny">指定 mpv</button>
+      <button id="btn-dl-mpv" class="btn tiny accent">下载 mpv</button>
+      <button id="btn-mpv-page" class="btn tiny ghost">下载页</button>
+    </div>
+  </section>
+
+  <main class="layout">
+    <section class="col col-left">
+      <div class="card">
+        <div class="card-head">
+          <h2>源文件</h2>
+          <button id="btn-pick-video" class="btn accent">选择视频</button>
+        </div>
+        <div class="file-line">
+          <span id="video-path" class="mono muted">尚未选择文件</span>
+        </div>
+        <div id="media-meta" class="media-meta"></div>
+      </div>
+
+      <div class="card grow">
+        <div class="card-head">
+          <h2>音轨</h2>
+          <span class="hint">点击选中；"试听"用 mpv 直接播放源文件，不产生中间文件</span>
+        </div>
+        <div class="table-wrap">
+          <table class="tracks">
+            <thead>
+              <tr>
+                <th style="width:44px">#</th>
+                <th>编码</th>
+                <th style="width:88px">声道</th>
+                <th style="width:70px">语言</th>
+                <th>标题</th>
+                <th style="width:150px">建议</th>
+                <th style="width:70px"></th>
+              </tr>
+            </thead>
+            <tbody id="track-rows">
+              <tr class="empty"><td colspan="7">选择视频后在此列出全部音轨</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>时间轴对齐</h2></div>
+        <div id="align-info" class="align-info muted">等待分析…</div>
+        <label class="check">
+          <input type="checkbox" id="opt-align" checked />
+          <span>导出音频时按上面的偏移自动补偿（保证音频 0 秒 = 视频 0 秒）</span>
+        </label>
+      </div>
+    </section>
+
+    <section class="col col-right">
+      <div class="card">
+        <div class="card-head"><h2>输出内容</h2></div>
+
+        <div class="group">
+          <label class="check"><input type="checkbox" id="opt-audio" checked /><span class="strong">音频</span></label>
+          <div class="grid-2">
+            <label class="field">格式
+              <select id="opt-audio-codec">
+                <option value="flac">FLAC（无损，推荐）</option>
+                <option value="mp3">MP3（体积小）</option>
+                <option value="wav">WAV（未压缩）</option>
+              </select>
+            </label>
+            <label class="field">声道
+              <select id="opt-audio-mode">
+                <option value="stereo">2 声道 downmix（推荐）</option>
+                <option value="native">保持源声道（原生多声道）</option>
+                <option value="center">中置单声道（对白最干净）</option>
+              </select>
+            </label>
+            <label class="field" id="field-bitrate">MP3 码率
+              <select id="opt-audio-bitrate">
+                <option value="320k">320 kbps</option>
+                <option value="256k">256 kbps</option>
+                <option value="192k">192 kbps</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <div class="group">
+          <label class="check"><input type="checkbox" id="opt-preview" checked /><span class="strong">视频 · 预览版</span></label>
+          <p class="group-note">H.264 / mp4 / 短 GOP / 无音轨 / faststart，供打轴时看画面</p>
+          <div class="grid-2">
+            <label class="field">分辨率
+              <select id="opt-preview-height">
+                <option value="480">480p</option>
+                <option value="720" selected>720p</option>
+                <option value="1080">1080p</option>
+              </select>
+            </label>
+            <label class="field">画质 CRF
+              <input type="number" id="opt-preview-crf" value="30" min="1" max="51" />
+            </label>
+          </div>
+        </div>
+
+        <div class="group">
+          <label class="check"><input type="checkbox" id="opt-high" /><span class="strong">视频 · 高质量版</span></label>
+          <p class="group-note">原分辨率 H.264，画质更好、体积更大</p>
+          <div class="grid-2">
+            <label class="field">画质 CRF
+              <input type="number" id="opt-high-crf" value="18" min="1" max="51" />
+            </label>
+          </div>
+        </div>
+
+        <div class="group">
+          <label class="check"><input type="checkbox" id="opt-remux" /><span class="strong">原样封装（无损）</span></label>
+          <p class="group-note">-c copy，不重新编码，速度最快、画质完全不变</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>输出位置</h2></div>
+        <div class="dir-line">
+          <span id="out-dir" class="mono muted">未设置</span>
+          <button id="btn-pick-out" class="btn tiny">选择</button>
+        </div>
+        <label class="field">文件名前缀
+          <input type="text" id="opt-basename" placeholder="留空则用源文件名" />
+        </label>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>将要执行</h2>
+          <button id="btn-describe" class="btn tiny ghost">刷新命令预览</button>
+        </div>
+        <pre id="cmd-preview" class="cmd">选择音轨后可预览实际调用参数</pre>
+      </div>
+
+      <div class="card">
+        <div class="actions">
+          <button id="btn-start" class="btn accent big" disabled>开始输出</button>
+          <button id="btn-cancel" class="btn big" disabled>取消</button>
+          <button id="btn-open-out" class="btn ghost big">打开输出目录</button>
+        </div>
+        <div class="progress-wrap">
+          <div class="progress"><div id="progress-bar" class="progress-bar"></div></div>
+          <div class="progress-text mono" id="progress-text">就绪</div>
+        </div>
+        <pre id="log" class="log"></pre>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

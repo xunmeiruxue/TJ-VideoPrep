@@ -1,0 +1,28 @@
+[package]
+name = "tj-videoprep"
+version = "0.1.0"
+description = "TJ-VideoPrep - 视频音轨分离、转码与选轨试听工具"
+authors = ["YG"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "tj_videoprep_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ureq = { version = "2.10", features = ["json"] }
+rfd = "0.15"
+sevenz-rust = "0.6"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
